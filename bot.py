@@ -39,7 +39,6 @@ async def on_ready():
 # @commands.has_role('not geh')
 async def hello(ctx, *args):
     msg = 'Salam kenal, jancok kalian semua'
-
     await ctx.send(f'{msg} {", ".join(args)}')
 
 @bot.command()
