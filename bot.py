@@ -1,6 +1,4 @@
-import collections
 import os
-import uuid
 import glob
 import time
 import io
@@ -44,8 +42,7 @@ async def hello(ctx, *args):
 
 @bot.command()
 async def quote(ctx, *args):
-    print('ctx', ctx)
-    print('args', args)
+    print('quote', args)
     if len(args) < 2:
         await ctx.send("Usage: quotes [background] \"[quotes_text]\" ")
     else:
@@ -64,5 +61,7 @@ async def quote(ctx, *args):
             img.save(image_binary, 'PNG')
             image_binary.seek(0)
             await ctx.send(file=discord.File(fp=image_binary, filename='image.png'))
+
+
 
 bot.run(TOKEN)

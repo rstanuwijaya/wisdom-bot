@@ -31,5 +31,4 @@ lao_tzu_obj = {
     "image_url": "https://i.imgur.com/N6uYFSO.png"
 }
 
-
 collections_images.insert_many([lao_ping_obj, lao_tzu_obj])
