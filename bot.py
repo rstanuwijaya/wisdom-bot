@@ -44,6 +44,7 @@ async def hello(ctx, *args):
 
 @bot.command()
 async def quote(ctx, *args):
+    print('quote called')
     if len(args) < 2:
         await ctx.send("Usage: quotes [background] \"[quotes_text]\" ")
     else:
