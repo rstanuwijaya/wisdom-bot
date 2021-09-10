@@ -2,3 +2,4 @@ discord.py
 pillow
 python-dotenv
 pymongo
+requests
