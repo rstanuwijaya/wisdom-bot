@@ -4,5 +4,4 @@ python-dotenv
 pymongo
 requests
 dnspython
-textwrap
 pilmoji
