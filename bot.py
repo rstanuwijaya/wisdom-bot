@@ -5,6 +5,7 @@ import time
 import io
 import pathlib
 import json
+import requests
 
 import discord
 from discord.ext import commands
@@ -33,13 +34,14 @@ async def hello(ctx, *args):
     await ctx.send(f'{msg} {", ".join(args)}')
 
 @bot.command()
-async def quotes(ctx, *args):
+async def quote(ctx, *args):
     if len(args) < 2:
         await ctx.send("Usage: quotes [background] \"[quotes_text]\" ")
     else:
         config_handler = open(os.path.join("assets_bg", args[0], "config.json"))
         config = json.load(config_handler) 
-        img = Image.open(os.path.join("assets_bg", args[0], "image.png"))
+        response = requests.get(config['image_url'])
+        img = Image.open(io.BytesIO(response.content))
         draw = ImageDraw.Draw(img)
         font = ImageFont.truetype("fonts/SansSerif.ttf", config['font_size'])
         draw.text((config['x'], config['y']), args[1] ,(255,255,255),font=font)
