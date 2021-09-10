@@ -24,9 +24,8 @@ bot = commands.Bot(command_prefix='>')
 
 print("Starting Bot")
 
-mongo_user = os.getenv('MONGODB_USER')
-mongo_pass = os.getenv('MONGODB_PASS')
-mongo_conn_str = f"mongodb+srv://{mongo_user}:{mongo_pass}@cluster0.ac4ho.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"
+mongo_uri = os.getenv('MONGODB_URI')
+mongo_conn_str = f"mongodb+srv://{mongo_uri}/myFirstDatabase?retryWrites=true&w=majority"
 client = pymongo.MongoClient(mongo_conn_str)
 db_quotes = client['quotes']
 collections_images = db_quotes['image']
@@ -43,12 +42,14 @@ async def hello(ctx, *args):
 
 @bot.command()
 async def quote(ctx, *args):
-    print('quote called')
     if len(args) < 2:
         await ctx.send("Usage: quotes [background] \"[quotes_text]\" ")
     else:
         name = args[0]
         config = collections_images.find_one({"name": name})
+        if config is None: 
+            await ctx.send("Image template not found")
+            return
         response = requests.get(config['image_url'])
         img = Image.open(io.BytesIO(response.content))
         draw = ImageDraw.Draw(img)
