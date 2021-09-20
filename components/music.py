@@ -1,3 +1,4 @@
+from re import A
 import youtube_dl
 import asyncio
 import discord
@@ -46,15 +47,55 @@ class YTDLSource(discord.PCMVolumeTransformer):
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
+class VoiceEntry:
+    def __init__(self, title, url, requester=None):
+        self.title = title
+        self.url = url
+        self.requester = requester
 class VoiceState:
     def __init__(self):
+        self.player = None
+        self.voice_client = None
         self.queue = []
     
-    def after_finished(self, exc=None):
+    async def play(self, query):
+        self.player = await YTDLSource.from_url(query, loop=False, stream=True)
+        self.voice_client.play(self.player, after=self.after_finished)
+
+    async def stop(self):
+        self.voice_client.stop()
+
+    async def start(self, ctx):
+        self.voice_client = ctx.voice_client
+        await self.play(self.queue[0].url)
+
+    async def next(self):
+        self.queue.pop(0)
+        if len(self.queue) == 0:
+            await self.stop()
+        else:
+            await self.stop()
+            await self.play(self.queue[0].url)
+
+    async def skip(self):
+        await self.next()
+
+    async def enqueue(self, query, requester=None):
+        data = ytdl.extract_info(f'ytsearch:{query}', download=False)
+        if 'entries' in data:
+            # take first item from a playlist
+            data = data['entries'][0]
+        title = data.get('title')
+        url = data.get('webpage_url')
+        entry = VoiceEntry(title, url)
+        self.queue.append(entry)
+        return title
+
+    async def after_finished(self, exc=None):
         if exc:
             print(exc)
         else:
-            print("Finished playing")
+            self.next()
         
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -64,16 +105,28 @@ class Music(commands.Cog):
     def get_voice_state(self, guild_id):
         if guild_id not in self.voice_states:
             self.voice_states[guild_id] = VoiceState()
-        return VoiceState
+        return self.voice_states[guild_id]
 
     @commands.command(pass_context=True)
     async def play(self, ctx: commands.Context, *, query):
+        """Add song into queue"""
         voice_state = self.get_voice_state(ctx.guild.id)
+        if not ctx.voice_client.is_playing():        
+            voice_state.queue = []
+            title = await voice_state.enqueue(query)
+            await voice_state.start(ctx)
+        else:
+            title = await voice_state.enqueue(query)
+        await ctx.send('Adding to queue: {}'.format(title))
 
-        async with ctx.typing():
-            player = await YTDLSource.from_url(query, loop=False, stream=True)
-            ctx.voice_client.play(player, after=voice_state.after_finished)
-        await ctx.send('Now playing: {}'.format(player.title))
+    @commands.command(pass_context=True)
+    async def skip(self, ctx: commands.Context):
+        """Skip the current song"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        if not ctx.voice_client.is_playing():        
+            voice_state.queue = []
+        await voice_state.skip()
+        await ctx.send('Skipping!')
 
     @commands.command()
     async def volume(self, ctx, volume: int):
@@ -88,8 +141,18 @@ class Music(commands.Cog):
     @commands.command()
     async def stop(self, ctx):
         """Stops and disconnects the bot from voice"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        await voice_state.stop()
 
-        await ctx.voice_client.disconnect()
+    @commands.command()
+    async def queue(self, ctx):
+        """Show the current queue"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        queue = voice_state.queue
+        formatted_string = ""
+        for i in range(len(queue)):
+            formatted_string += f"{i+1}. {queue[i].title}\n"
+        await ctx.send(formatted_string)
 
     @play.before_invoke
     async def ensure_voice(self, ctx):
@@ -99,6 +162,3 @@ class Music(commands.Cog):
             else:
                 await ctx.send("You are not connected to a voice channel.")
                 raise commands.CommandError("Author not connected to a voice channel.")
-        elif ctx.voice_client.is_playing():
-            ctx.voice_client.stop()
-
