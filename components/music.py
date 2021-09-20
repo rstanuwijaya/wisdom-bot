@@ -49,10 +49,13 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class VoiceEntry:
-    def __init__(self, title, url, requester=None):
+    def __init__(self, id, title, url, requester=None, duration=None, thumbnail=None):
+        self.id = id
         self.title = title
         self.url = url
         self.requester = requester
+        self.duration = duration
+        self.thumbnail = thumbnail
 
 class VoiceState:
     def __init__(self, bot):
@@ -91,11 +94,14 @@ class VoiceState:
         if 'entries' in data:
             # take first item from a playlist
             data = data['entries'][0]
-        title = data.get('title')
-        url = data.get('webpage_url')
-        entry = VoiceEntry(title, url, requester)
+        video_id = data.get("id")
+        video_title = data.get("title")
+        video_thumbnail = data.get("thumbnail")
+        video_url = data.get("webpage_url")
+        video_duration = data.get("duration")
+        entry = VoiceEntry(video_id, video_title, video_url, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
         self.queue.append(entry)
-        return title
+        return video_title, video_duration
 
     def after_finished(self, exc=None):
         try:
@@ -120,11 +126,11 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         if not ctx.voice_client.is_playing():        
             voice_state.queue = []
-            title = await voice_state.enqueue(ctx, query)
+            title, duration = await voice_state.enqueue(ctx, query)
             await voice_state.start(ctx)
         else:
-            title = await voice_state.enqueue(ctx, query)
-        await ctx.send('Adding to queue: {}'.format(title))
+            title, duration = await voice_state.enqueue(ctx, query)
+        await ctx.send(f'Adding to queue: {title}\n Duration: {duration}')
 
     @commands.command(aliases=['fs'])
     async def skip(self, ctx: commands.Context):
