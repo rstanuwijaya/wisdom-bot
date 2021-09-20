@@ -1,6 +1,7 @@
 import youtube_dl
 import asyncio
 import discord
+from discord.ext import commands
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
@@ -45,14 +46,16 @@ class YTDLSource(discord.PCMVolumeTransformer):
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
-async def play(ctx, *args):
-    await ctx.send(f'Not active yet')
-    url = args[0]
-    print('play', url)
-    voice_channel = ctx.message.author.voice.channel
+class Music(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    async with ctx.typing():
-        player = await YTDLSource.from_url(url, loop=False, stream=True)
-        voice_client = await voice_channel.connect()
-        voice_client.play(player, after=lambda e: print('Player error: %s' % e) if e else None)
-    await ctx.send('Now playing: {}'.format(player.title))
+    @commands.command(pass_context=True)
+    async def play(self, ctx, *, query):
+        voice_channel = ctx.message.author.voice.channel
+
+        async with ctx.typing():
+            player = await YTDLSource.from_url(query, loop=False, stream=True)
+            voice_client = await voice_channel.connect()
+            voice_client.play(player, after=lambda e: print('Player error: %s' % e) if e else None)
+        await ctx.send('Now playing: {}'.format(player.title))
