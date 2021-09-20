@@ -114,7 +114,7 @@ class Music(commands.Cog):
             self.voice_states[guild_id] = VoiceState(self.bot)
         return self.voice_states[guild_id]
 
-    @commands.command(pass_context=True)
+    @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, query):
         """Add song into queue"""
         voice_state = self.get_voice_state(ctx.guild.id)
@@ -126,7 +126,7 @@ class Music(commands.Cog):
             title = await voice_state.enqueue(ctx, query)
         await ctx.send('Adding to queue: {}'.format(title))
 
-    @commands.command(pass_context=True)
+    @commands.command(aliases=['fs'])
     async def skip(self, ctx: commands.Context):
         """Skip the current song"""
         voice_state = self.get_voice_state(ctx.guild.id)
@@ -151,7 +151,7 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         await voice_state.stop()
 
-    @commands.command()
+    @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue"""
         voice_state = self.get_voice_state(ctx.guild.id)
