@@ -21,6 +21,7 @@ ytdl_format_options = {
 }
 
 ffmpeg_options = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn'
 }
 
@@ -52,12 +53,16 @@ class VoiceEntry:
         self.title = title
         self.url = url
         self.requester = requester
+
 class VoiceState:
-    def __init__(self):
+    def __init__(self, bot):
+        self.bot = bot
         self.player = None
+        self.text_channel = None
         self.voice_client = None
         self.queue = []
-    
+        self.play_next_song = asyncio.Event()
+
     async def play(self, query):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True)
         self.voice_client.play(self.player, after=self.after_finished)
@@ -80,22 +85,24 @@ class VoiceState:
     async def skip(self):
         await self.next()
 
-    async def enqueue(self, query, requester=None):
+    async def enqueue(self, ctx, query):
+        requester = ctx.message.author.display_name
         data = ytdl.extract_info(f'ytsearch:{query}', download=False)
         if 'entries' in data:
             # take first item from a playlist
             data = data['entries'][0]
         title = data.get('title')
         url = data.get('webpage_url')
-        entry = VoiceEntry(title, url)
+        entry = VoiceEntry(title, url, requester)
         self.queue.append(entry)
         return title
 
-    async def after_finished(self, exc=None):
-        if exc:
-            print(exc)
-        else:
-            self.next()
+    def after_finished(self, exc=None):
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
+            fut.result()
+        except Exception as e:
+            print(e)
         
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -104,7 +111,7 @@ class Music(commands.Cog):
 
     def get_voice_state(self, guild_id):
         if guild_id not in self.voice_states:
-            self.voice_states[guild_id] = VoiceState()
+            self.voice_states[guild_id] = VoiceState(self.bot)
         return self.voice_states[guild_id]
 
     @commands.command(pass_context=True)
@@ -113,10 +120,10 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         if not ctx.voice_client.is_playing():        
             voice_state.queue = []
-            title = await voice_state.enqueue(query)
+            title = await voice_state.enqueue(ctx, query)
             await voice_state.start(ctx)
         else:
-            title = await voice_state.enqueue(query)
+            title = await voice_state.enqueue(ctx, query)
         await ctx.send('Adding to queue: {}'.format(title))
 
     @commands.command(pass_context=True)
@@ -151,7 +158,7 @@ class Music(commands.Cog):
         queue = voice_state.queue
         formatted_string = ""
         for i in range(len(queue)):
-            formatted_string += f"{i+1}. {queue[i].title}\n"
+            formatted_string += f"{i+1}. {queue[i].title} Requested by {queue[i].requester}\n"
         await ctx.send(formatted_string)
 
     @play.before_invoke
