@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 import components
 
-bot = commands.Bot(command_prefix='>')
+bot = commands.Bot(command_prefix='!')
 bot.add_cog(components.Quote(bot))
 bot.add_cog(components.Music(bot))
 
