@@ -3,6 +3,9 @@ import youtube_dl
 import asyncio
 import discord
 from discord.ext import commands
+import lyricsgenius
+from dotenv import load_dotenv
+import os
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
@@ -49,13 +52,17 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class VoiceEntry:
-    def __init__(self, id, title, url, requester=None, duration=None, thumbnail=None):
+    def __init__(self, query, id, title, url, requester=None, duration=None, thumbnail=None):
         self.id = id
         self.title = title
         self.url = url
         self.requester = requester
         self.duration = duration
         self.thumbnail = thumbnail
+        self.query = query
+
+    def __str__(self):
+        return self.title
 
 class VoiceState:
     def __init__(self, bot):
@@ -71,7 +78,7 @@ class VoiceState:
         self.voice_client.play(self.player, after=self.after_finished)
 
     async def stop(self):
-        self.voice_client.stop()
+        self.voice_client.disconnect()
 
     async def start(self, ctx):
         self.voice_client = ctx.voice_client
@@ -86,7 +93,7 @@ class VoiceState:
             await self.play(self.queue[0].url)
 
     async def skip(self):
-        await self.next()
+        self.voice_client.stop()
 
     async def enqueue(self, ctx, query):
         requester = ctx.message.author.display_name
@@ -99,7 +106,7 @@ class VoiceState:
         video_thumbnail = data.get("thumbnail")
         video_url = data.get("webpage_url")
         video_duration = data.get("duration")
-        entry = VoiceEntry(video_id, video_title, video_url, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+        entry = VoiceEntry(query, video_id, video_title, video_url, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
         self.queue.append(entry)
         return video_title, video_duration
 
@@ -134,8 +141,10 @@ class VoiceState:
         
 class Music(commands.Cog):
     def __init__(self, bot):
+        load_dotenv()
         self.bot: commands.Bot = bot
         self.voice_states: dict[str, VoiceState] = dict()
+        self.genius = lyricsgenius.Genius()
 
     def get_voice_state(self, guild_id):
         if guild_id not in self.voice_states:
@@ -158,8 +167,8 @@ class Music(commands.Cog):
     async def skip(self, ctx: commands.Context):
         """Skip the current song"""
         voice_state = self.get_voice_state(ctx.guild.id)
-        if not ctx.voice_client.is_playing():        
-            voice_state.queue = []
+        # if not ctx.voice_client.is_playing():        
+        #     voice_state.queue = []
         await voice_state.skip()
         await ctx.send('Skipping!')
 
@@ -185,6 +194,17 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         formatted_string = voice_state.get_display_queue()
         await ctx.send(formatted_string)
+
+    @commands.command(aliases=['l'])
+    async def lyrics(self, ctx):
+        """Show the lyrics of current song"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        current_song = voice_state.queue[0]
+        song = self.genius.search_song(current_song.query)
+        embed=discord.Embed(title=song.full_title, description=f"By: {song.artist}", color=0x00ff00)
+        for i in range(len(song.lyrics)//1024+1):
+            embed.add_field(name="Lyrics" if i == 0 else "Continued", value=song.lyrics[i*1024:(i+1)*1024], inline=False)
+        await ctx.send(embed=embed)
 
     @commands.command(aliases=['mv'])
     async def move(self, ctx, *args):
