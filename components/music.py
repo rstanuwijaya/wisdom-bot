@@ -238,9 +238,16 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         current_song = voice_state.queue[0]
         song = self.genius.search_song(current_song.query)
-        embed=discord.Embed(title=song.full_title, description=f"By: {song.artist}", color=0xFFC0CB)
-        for i in range(len(song.lyrics)//1024+1):
-            embed.add_field(name="Lyrics" if i == 0 else "Continued", value=song.lyrics[i*1024:(i+1)*1024], inline=False)
+        if song is None:
+            await ctx.send("**Lyrics Not Found**")
+            return
+        def get_formatted_description(song):
+            formatted_string = ""
+            formatted_string += f'__Artist: {song.artist}__\n\n'
+            formatted_string += f'__Lyrics:__ \n'
+            formatted_string += f'{song.lyrics[:1024*2]}'
+            return formatted_string
+        embed=discord.Embed(title=song.full_title, description=get_formatted_description(song), color=0xFFC0CB)
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['mv'])
@@ -259,7 +266,7 @@ class Music(commands.Cog):
             raise exc
         removed_elem = voice_state.pop(args[0])
         if not removed_elem: 
-            await ctx.send(f'Index not found')
+            await ctx.send(f'**Index not found**')
             return
         voice_state.insert(args[1], removed_elem)
         await ctx.send(f'**Moved {removed_elem.title} from #{args[0]} to #{args[1]}**')
@@ -278,7 +285,7 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         removed_elem = voice_state.pop(args[0])
         if not removed_elem: 
-            await ctx.send(f'Index not found')
+            await ctx.send(f'**Index not found**')
             return
         await ctx.send(f'**Removed {removed_elem.title}**')
 
