@@ -8,3 +8,4 @@ pilmoji
 PyNaCl
 asyncio
 youtube-dl
+lyricsgenius
