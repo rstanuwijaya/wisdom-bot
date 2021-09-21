@@ -165,7 +165,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, query):
-        """Add song into queue"""
+        """Add song into queue. !p [query: text/youtube_url]"""
         voice_state = self.get_voice_state(ctx.guild.id, ctx.message.channel)
         await ctx.send(f':mag_right: **Searching** `{query}`')
         if not ctx.voice_client.is_playing():        
@@ -185,7 +185,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['fs'])
     async def skip(self, ctx: commands.Context):
-        """Skip the current song"""
+        """Skip the current song. !fs"""
         voice_state = self.get_voice_state(ctx.guild.id)
         # if not ctx.voice_client.is_playing():        
         #     voice_state.queue = []
@@ -194,7 +194,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['v'])
     async def volume(self, ctx, volume: int):
-        """Changes the player's volume"""
+        """Changes the player's volume. !v [volume]"""
 
         if ctx.voice_client is None:
             return await ctx.send("Not connected to a voice channel.")
@@ -211,7 +211,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
-        """Show the current queue"""
+        """Show the current queue. !q"""
         def get_formatted_duration(time):
             minutes = time//60
             seconds = time%60
@@ -242,7 +242,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['l'])
     async def lyrics(self, ctx, *, query=None):
-        """Show the lyrics of current song"""
+        """Show the lyrics of current song. !l [query = current_song]"""
         voice_state = self.get_voice_state(ctx.guild.id)
         if not query:
             entry = voice_state.queue[0]
@@ -263,7 +263,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['mv'])
     async def move(self, ctx, *args):
-        """Move song queue"""
+        """Move song in queue. !mv [origin = last] [target = first]"""
         voice_state = self.get_voice_state(ctx.guild.id)
         try:
             if len(args) < 1:
@@ -284,7 +284,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['rm'])
     async def remove(self, ctx, *args):
-        """Remove song queue"""
+        """Remove song from queue. !rm [index = last]"""
         try:
             if len(args) < 1:
                 args = (-1,)

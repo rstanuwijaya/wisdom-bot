@@ -31,10 +31,11 @@ class Quote(commands.Cog):
 
     @commands.command(pass_context=True)
     async def quote(self, ctx, *args):
+        """Quote a meme. !quote [template] [text]"""
         message = " ".join(args[1:])
         print('quote', args[0], message)
         if len(args) < 2:
-            await ctx.send("Usage: quotes [background] [quotes_text] ")
+            await ctx.send("Usage: quotes [template] [text] ")
         else:
             name = args[0]
             config: dict = self.collections_images.find_one({"name": name})
