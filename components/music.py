@@ -68,13 +68,19 @@ class VoiceState:
     def __init__(self, bot, text_channel=None):
         self.bot = bot
         self.player = None
-        self.text_channel = text_channel
+        self.text_channel: discord.TextChannel = text_channel
         self.voice_client = None
         self.queue: list[VoiceEntry] = []
         self.play_next_song = asyncio.Event()
 
     async def play(self, query):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True)
+        entry = self.queue[0]
+        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
+        embed.set_thumbnail(url=entry.thumbnail)
+        embed.set_author(name="Now Playing")
+        embed.add_field(name="Song Duration", value=f'{entry.duration//60}:{entry.duration%60}', inline=True)
+        await self.text_channel.send(embed=embed)
         self.voice_client.play(self.player, after=self.after_finished)
 
     async def stop(self):
@@ -154,14 +160,14 @@ class Music(commands.Cog):
 
     def get_voice_state(self, guild_id, text_channel=None):
         if guild_id not in self.voice_states:
-            self.voice_states[guild_id] = VoiceState(self.bot)
+            self.voice_states[guild_id] = VoiceState(self.bot, text_channel=text_channel)
         return self.voice_states[guild_id]
 
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, query):
         """Add song into queue"""
-        voice_state = self.get_voice_state(ctx.guild.id)
-        await ctx.send(f':mag_right:**Searching** `{query}`')
+        voice_state = self.get_voice_state(ctx.guild.id, ctx.message.channel)
+        await ctx.send(f':mag_right: **Searching** `{query}`')
         if not ctx.voice_client.is_playing():        
             voice_state.queue = []
             entry = await voice_state.enqueue(ctx, query)
@@ -173,7 +179,8 @@ class Music(commands.Cog):
         embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
         embed.add_field(name="Song Duration", value=f'{entry.duration//60}:{entry.duration%60}', inline=True)
         embed.add_field(name="Position", value=voice_state.length()-1 if voice_state.length()-1 > 0 else "Now Playing!", inline=True)
-        await ctx.send(embed=embed)
+        if voice_state.length() > 1:
+            await ctx.send(embed=embed)
         # await ctx.send(f'Adding to queue: {entry.title}\nDuration: {entry.duration//60}m{entry.duration%60}s')
 
     @commands.command(aliases=['fs'])
@@ -205,13 +212,6 @@ class Music(commands.Cog):
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue"""
-        voice_state = self.get_voice_state(ctx.guild.id)
-        queue = voice_state.queue
-        if len(queue) == 0:
-            await ctx.send("**Nothing in queue!**")
-            return
-        embed=discord.Embed(title=f"Queue for {ctx.guild.name}", color=0xFFC0CB)
-        embed.set_footer(text="Displaying Queue", icon_url=ctx.author.avatar_url)
         def get_formatted_duration(time):
             minutes = time//60
             seconds = time%60
@@ -228,16 +228,27 @@ class Music(commands.Cog):
             for i in range(1, len(queue)):
                 formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n\n'
             return formatted_string
+        voice_state = self.get_voice_state(ctx.guild.id)
+        queue = voice_state.queue
+        if len(queue) == 0:
+            await ctx.send("**Nothing in queue!**")
+            return
+        total_time = sum([entry.duration for entry in queue])
+        embed=discord.Embed(title=f"Queue for {ctx.guild.name}", color=0xFFC0CB)
+        embed.set_footer(text=f"Total Queue Time: {get_formatted_duration(total_time)}", icon_url=ctx.author.avatar_url)
         embed.add_field(name="Now Playing", value=get_formatted_song(queue[0]), inline=False)
         embed.add_field(name="Up Next", value=get_up_next(queue), inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['l'])
-    async def lyrics(self, ctx):
+    async def lyrics(self, ctx, *, query=None):
         """Show the lyrics of current song"""
         voice_state = self.get_voice_state(ctx.guild.id)
-        current_song = voice_state.queue[0]
-        song = self.genius.search_song(current_song.query)
+        if not query:
+            entry = voice_state.queue[0]
+            song = self.genius.search_song(entry.query)
+        else:
+            song = self.genius.search_song(query)
         if song is None:
             await ctx.send("**Lyrics Not Found**")
             return
@@ -269,7 +280,7 @@ class Music(commands.Cog):
             await ctx.send(f'**Index not found**')
             return
         voice_state.insert(args[1], removed_elem)
-        await ctx.send(f'**Moved {removed_elem.title} from #{args[0]} to #{args[1]}**')
+        await ctx.send(f'**Moved `{removed_elem.title}` from `#{args[0]}` to `#{args[1]}`**')
 
     @commands.command(aliases=['rm'])
     async def remove(self, ctx, *args):
@@ -287,14 +298,14 @@ class Music(commands.Cog):
         if not removed_elem: 
             await ctx.send(f'**Index not found**')
             return
-        await ctx.send(f'**Removed {removed_elem.title}**')
+        await ctx.send(f'**Removed `{removed_elem.title}`**')
 
     @play.before_invoke
     async def ensure_voice(self, ctx):
         if ctx.voice_client is None:
             if ctx.author.voice:
                 await ctx.author.voice.channel.connect()
-                await ctx.send(f"**Joined** {ctx.author.voice.channel.name} **to bound to** `{ctx.message.channel.name}`")
+                await ctx.send(f"**Joined** {ctx.author.voice.channel.name} **to bound to** `#{ctx.message.channel.name}`")
             else:
                 await ctx.send("You are not connected to a voice channel.")
                 raise commands.CommandError("Author not connected to a voice channel.")
