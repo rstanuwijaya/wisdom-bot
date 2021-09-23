@@ -72,6 +72,8 @@ class VoiceState:
         self.voice_client = None
         self.queue: list[VoiceEntry] = []
         self.play_next_song = asyncio.Event()
+        self.loop = False
+        self.queue_loop = False
 
     async def play(self, query):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True)
@@ -93,7 +95,10 @@ class VoiceState:
 
     async def next(self):
         if len(self.queue) == 0: return
-        self.queue.pop(0)
+        if not self.loop:
+            popped = self.queue.pop(0)
+            if self.queue_loop:
+                self.queue.append(popped)
         if len(self.queue) == 0:
             await self.stop()
         else:
@@ -181,14 +186,11 @@ class Music(commands.Cog):
         embed.add_field(name="Position", value=voice_state.length()-1 if voice_state.length()-1 > 0 else "Now Playing!", inline=True)
         if voice_state.length() > 1:
             await ctx.send(embed=embed)
-        # await ctx.send(f'Adding to queue: {entry.title}\nDuration: {entry.duration//60}m{entry.duration%60}s')
 
     @commands.command(aliases=['fs'])
     async def skip(self, ctx: commands.Context):
         """Skip the current song. !fs"""
         voice_state = self.get_voice_state(ctx.guild.id)
-        # if not ctx.voice_client.is_playing():        
-        #     voice_state.queue = []
         await voice_state.skip()
         await ctx.send('**:fast_forward: Skipped**')
 
@@ -226,7 +228,7 @@ class Music(commands.Cog):
             if len(queue) <= 1:
                 formatted_string += 'Empty'
             for i in range(1, len(queue)):
-                formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n\n'
+                formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n'
             return formatted_string
         voice_state = self.get_voice_state(ctx.guild.id)
         queue = voice_state.queue
@@ -281,6 +283,20 @@ class Music(commands.Cog):
             return
         voice_state.insert(args[1], removed_elem)
         await ctx.send(f'**Moved `{removed_elem.title}` from `#{args[0]}` to `#{args[1]}`**')
+
+    @commands.command()
+    async def loop(self, ctx):
+        """Loop a single song"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.loop = not voice_state.loop
+        await ctx.send(f'**Loop: `{"ON" if voice_state.loop else "OFF"}`**')
+
+    @commands.command(aliases=['ql'])
+    async def queueloop(self, ctx):
+        """Queue loop"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.queue_loop = not voice_state.queue_loop
+        await ctx.send(f'**Queue Loop: `{"ON" if voice_state.queue_loop else "OFF"}`**')
 
     @commands.command(aliases=['rm'])
     async def remove(self, ctx, *args):
