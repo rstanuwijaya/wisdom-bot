@@ -97,7 +97,7 @@ class VoiceState:
         if len(self.queue) == 0:
             await self.stop()
         else:
-            await self.stop()
+            self.voice_client.stop()
             await self.play(self.queue[0].url)
 
     async def skip(self):
@@ -105,7 +105,10 @@ class VoiceState:
 
     async def enqueue(self, ctx, query):
         requester = ctx.message.author.display_name
-        data = ytdl.extract_info(f'ytsearch:{query}', download=False)
+        if query.startswith("https://youtu.be/"):
+            data = ytdl.extract_info(f'{query}', download=False)
+        else:
+            data = ytdl.extract_info(f'ytsearch:{query}', download=False)
         if 'entries' in data:
             # take first item from a playlist
             data = data['entries'][0]
@@ -266,39 +269,45 @@ class Music(commands.Cog):
         """Move song in queue. !mv [origin = last] [target = first]"""
         voice_state = self.get_voice_state(ctx.guild.id)
         try:
-            if len(args) < 1:
-                args = (-1, 1)
-            elif len(args) < 2:
-                args = (int(args[0]), 1)
-            else:
-                args = (int(args[0]), int(args[1]))
-        except ValueError as exc:
-            await ctx.send(f'Wrong arguments')
-            raise exc
-        removed_elem = voice_state.pop(args[0])
-        if not removed_elem: 
-            await ctx.send(f'**Index not found**')
-            return
-        voice_state.insert(args[1], removed_elem)
-        await ctx.send(f'**Moved `{removed_elem.title}` from `#{args[0]}` to `#{args[1]}`**')
+            try:
+                if len(args) < 1:
+                    args = (-1, 1)
+                elif len(args) < 2:
+                    args = (int(args[0]), 1)
+                else:
+                    args = (int(args[0]), int(args[1]))
+            except ValueError as exc:
+                await ctx.send(f'Wrong arguments')
+                raise exc
+            removed_elem = voice_state.pop(args[0])
+            if not removed_elem: 
+                await ctx.send(f'**Index not found**')
+                return
+            voice_state.insert(args[1], removed_elem)
+            await ctx.send(f'**Moved `{removed_elem.title}` from `#{args[0]}` to `#{args[1]}`**')
+        except:
+            await ctx.send(f'**Move Failed**')
 
     @commands.command(aliases=['rm'])
     async def remove(self, ctx, *args):
         """Remove song from queue. !rm [index = last]"""
         try:
-            if len(args) < 1:
-                args = (-1,)
-            else:
-                args = (int(args[0]),)
-        except ValueError as exc:
-            await ctx.send(f'Wrong arguments')
-            raise exc
-        voice_state = self.get_voice_state(ctx.guild.id)
-        removed_elem = voice_state.pop(args[0])
-        if not removed_elem: 
-            await ctx.send(f'**Index not found**')
-            return
-        await ctx.send(f'**Removed `{removed_elem.title}`**')
+            try:
+                if len(args) < 1:
+                    args = (-1,)
+                else:
+                    args = (int(args[0]),)
+            except ValueError as exc:
+                await ctx.send(f'Wrong arguments')
+                raise exc
+            voice_state = self.get_voice_state(ctx.guild.id)
+            removed_elem = voice_state.pop(args[0])
+            if not removed_elem: 
+                await ctx.send(f'**Index not found**')
+                return
+            await ctx.send(f'**Removed `{removed_elem.title}`**')
+        except:
+            await ctx.send(f'**Remove Failed**')
 
     @play.before_invoke
     async def ensure_voice(self, ctx):
