@@ -166,12 +166,10 @@ class VoiceState:
         formatted_string = f'{minutes}:{seconds}'
         return formatted_string
     
-    @staticmethod
-    def get_formatted_song(song):
+    def get_formatted_song(self, song):
         return f'[{song.title}]({song.url}) | `{self.get_formatted_duration(song.duration)} Requested by: {song.requester}`'
 
-    @staticmethod
-    def get_up_next(queue):
+    def get_up_next(self, queue):
         formatted_string = ''
         if len(queue) <= 1:
             formatted_string += 'Empty'
