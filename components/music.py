@@ -1,11 +1,9 @@
-from re import A
 import youtube_dl
 import asyncio
 import discord
 from discord.ext import commands
 import lyricsgenius
 from dotenv import load_dotenv
-import os
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
@@ -72,6 +70,8 @@ class VoiceState:
         self.voice_client = None
         self.queue: list[VoiceEntry] = []
         self.play_next_song = asyncio.Event()
+        self.loop = False
+        self.queue_loop = False
 
     async def play(self, query):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True)
@@ -79,9 +79,15 @@ class VoiceState:
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Now Playing")
-        embed.add_field(name="Song Duration", value=f'{entry.duration//60}:{entry.duration%60}', inline=True)
+        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
         await self.text_channel.send(embed=embed)
         self.voice_client.play(self.player, after=self.after_finished)
+
+    async def disconnect(self):
+        self.voice_client.disconnect()
+
+    async def clear(self):
+        self.queue = [self.queue[0], ]
 
     async def stop(self):
         self.queue = []
@@ -93,14 +99,19 @@ class VoiceState:
 
     async def next(self):
         if len(self.queue) == 0: return
-        self.queue.pop(0)
+        if not self.loop:
+            popped = self.queue.pop(0)
+            if self.queue_loop:
+                self.queue.append(popped)
         if len(self.queue) == 0:
             await self.stop()
         else:
-            self.voice_client.stop()
+            # self.voice_client.stop()
             await self.play(self.queue[0].url)
 
     async def skip(self):
+        if self.loop:
+            popped = self.queue.pop(0)
         self.voice_client.stop()
 
     async def enqueue(self, ctx, query):
@@ -139,20 +150,32 @@ class VoiceState:
         """return the length of the queue"""
         return len(self.queue)
 
-    def get_display_queue(self):
-        """get formatted string of queue"""
-        formatted_string = ""
-        formatted_string += f"Now Playing: {self.queue[0].title}, Requested by {self.queue[0].requester}\n\n"
-        for i in range(1, len(self.queue)):
-            formatted_string += f"{i}. {self.queue[i].title}, Requested by {self.queue[i].requester}\n"
-        return formatted_string
-
     def after_finished(self, exc=None):
         try:
             fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
             fut.result()
         except Exception as e:
             print(e)
+
+    @staticmethod
+    def get_formatted_duration(time):
+        minutes = time//60
+        seconds = time%60
+        if seconds < 10:
+            seconds = f'0{seconds}'
+        formatted_string = f'{minutes}:{seconds}'
+        return formatted_string
+    
+    def get_formatted_song(self, song):
+        return f'[{song.title}]({song.url}) | `{self.get_formatted_duration(song.duration)} Requested by: {song.requester}`'
+
+    def get_up_next(self, queue):
+        formatted_string = ''
+        if len(queue) <= 1:
+            formatted_string += 'Empty'
+        for i in range(1, len(queue)):
+            formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
+        return formatted_string
         
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -180,18 +203,15 @@ class Music(commands.Cog):
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
-        embed.add_field(name="Song Duration", value=f'{entry.duration//60}:{entry.duration%60}', inline=True)
+        embed.add_field(name="Song Duration", value=voice_state.get_formatted_duration(entry.duration), inline=True)
         embed.add_field(name="Position", value=voice_state.length()-1 if voice_state.length()-1 > 0 else "Now Playing!", inline=True)
         if voice_state.length() > 1:
             await ctx.send(embed=embed)
-        # await ctx.send(f'Adding to queue: {entry.title}\nDuration: {entry.duration//60}m{entry.duration%60}s')
 
     @commands.command(aliases=['fs'])
     async def skip(self, ctx: commands.Context):
         """Skip the current song. !fs"""
         voice_state = self.get_voice_state(ctx.guild.id)
-        # if not ctx.voice_client.is_playing():        
-        #     voice_state.queue = []
         await voice_state.skip()
         await ctx.send('**:fast_forward: Skipped**')
 
@@ -215,22 +235,22 @@ class Music(commands.Cog):
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue. !q"""
-        def get_formatted_duration(time):
-            minutes = time//60
-            seconds = time%60
-            if seconds < 10:
-                seconds = f'0{seconds}'
-            formatted_string = f'{minutes}:{seconds}'
-            return formatted_string
-        def get_formatted_song(song):
-            return f'[{song.title}]({song.url}) | `{get_formatted_duration(song.duration)} Requested by: {song.requester}`\n\n'
-        def get_up_next(queue):
-            formatted_string = ''
-            if len(queue) <= 1:
-                formatted_string += 'Empty'
-            for i in range(1, len(queue)):
-                formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n\n'
-            return formatted_string
+        # def get_formatted_duration(time):
+        #     minutes = time//60
+        #     seconds = time%60
+        #     if seconds < 10:
+        #         seconds = f'0{seconds}'
+        #     formatted_string = f'{minutes}:{seconds}'
+        #     return formatted_string
+        # def get_formatted_song(song):
+        #     return f'[{song.title}]({song.url}) | `{get_formatted_duration(song.duration)} Requested by: {song.requester}`'
+        # def get_up_next(queue):
+        #     formatted_string = ''
+        #     if len(queue) <= 1:
+        #         formatted_string += 'Empty'
+        #     for i in range(1, len(queue)):
+        #         formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n\n'
+        #     return formatted_string
         voice_state = self.get_voice_state(ctx.guild.id)
         queue = voice_state.queue
         if len(queue) == 0:
@@ -238,9 +258,9 @@ class Music(commands.Cog):
             return
         total_time = sum([entry.duration for entry in queue])
         embed=discord.Embed(title=f"Queue for {ctx.guild.name}", color=0xFFC0CB)
-        embed.set_footer(text=f"Total Queue Time: {get_formatted_duration(total_time)}", icon_url=ctx.author.avatar_url)
-        embed.add_field(name="Now Playing", value=get_formatted_song(queue[0]), inline=False)
-        embed.add_field(name="Up Next", value=get_up_next(queue), inline=False)
+        embed.set_footer(text=f"Total Queue Time: {voice_state.get_formatted_duration(total_time)}", icon_url=ctx.author.avatar_url)
+        embed.add_field(name="Now Playing", value=voice_state.get_formatted_song(queue[0]), inline=False)
+        embed.add_field(name="Up Next", value=voice_state.get_up_next(queue), inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['l'])
@@ -285,8 +305,23 @@ class Music(commands.Cog):
                 return
             voice_state.insert(args[1], removed_elem)
             await ctx.send(f'**Moved `{removed_elem.title}` from `#{args[0]}` to `#{args[1]}`**')
-        except:
+        except Exception as exc:
             await ctx.send(f'**Move Failed**')
+            raise exc
+
+    @commands.command()
+    async def loop(self, ctx):
+        """Loop a single song"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.loop = not voice_state.loop
+        await ctx.send(f'**Loop: `{"ON" if voice_state.loop else "OFF"}`**')
+
+    @commands.command(aliases=['ql'])
+    async def queueloop(self, ctx):
+        """Queue loop"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.queue_loop = not voice_state.queue_loop
+        await ctx.send(f'**Queue Loop: `{"ON" if voice_state.queue_loop else "OFF"}`**')
 
     @commands.command(aliases=['rm'])
     async def remove(self, ctx, *args):
@@ -306,8 +341,23 @@ class Music(commands.Cog):
                 await ctx.send(f'**Index not found**')
                 return
             await ctx.send(f'**Removed `{removed_elem.title}`**')
-        except:
+        except Exception as exc:
             await ctx.send(f'**Remove Failed**')
+            raise exc
+
+    @commands.command(aliases=['dc'])
+    async def disconnect(self, ctx):
+        """Disconnect form voice channel"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.disconnect()
+        await ctx.send(f'**Adios!**')
+
+    @commands.command(aliases=['clc', 'clean'])
+    async def clear(self, ctx):
+        """Clear the queue"""
+        voice_state = self.get_voice_state(ctx.guild.id)
+        voice_state.clear()
+        await ctx.send(f'**Cleared!**')
 
     @play.before_invoke
     async def ensure_voice(self, ctx):
