@@ -222,8 +222,12 @@ class Music(commands.Cog):
         if ctx.voice_client is None:
             return await ctx.send("Not connected to a voice channel.")
 
-        ctx.voice_client.source.volume = volume / 100
-        await ctx.send(f"**Volume**: `{volume}`%")
+        if volume is None:
+            volume = ctx.voice_client.source.volume
+            await ctx.send(f"**Volume**: `{volume}`%")
+        else:
+            ctx.voice_client.source.volume = volume / 100
+            await ctx.send(f"**Volume**: `{volume}`%")
 
     @commands.command()
     async def stop(self, ctx):
