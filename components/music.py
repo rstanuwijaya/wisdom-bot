@@ -1,3 +1,5 @@
+from sys import excepthook
+from time import time
 import youtube_dl
 import asyncio
 import discord
@@ -21,11 +23,6 @@ ytdl_format_options = {
     'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
 }
 
-ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
-}
-
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -38,7 +35,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
+    async def from_url(cls, url, *, loop=None, stream=False, timestamp=0):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
 
@@ -47,6 +44,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
+        ffmpeg_options = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': f'-vn -ss {timestamp}'
+        }
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class VoiceEntry:
@@ -58,6 +59,7 @@ class VoiceEntry:
         self.duration = duration
         self.thumbnail = thumbnail
         self.query = query
+        self.seek_timestamp = 0
 
     def __str__(self):
         return self.title
@@ -73,14 +75,10 @@ class VoiceState:
         self.loop = False
         self.queue_loop = False
 
-    async def play(self, query):
-        self.player = await YTDLSource.from_url(query, loop=False, stream=True)
+    async def play(self, query, send=True, timestamp=0):
+        self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
         entry = self.queue[0]
-        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
-        embed.set_thumbnail(url=entry.thumbnail)
-        embed.set_author(name="Now Playing")
-        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
-        await self.text_channel.send(embed=embed)
+        if send: await self.send_now_playing(entry)
         self.voice_client.play(self.player, after=self.after_finished)
 
     async def disconnect(self):
@@ -99,19 +97,24 @@ class VoiceState:
 
     async def next(self):
         if len(self.queue) == 0: return
-        if not self.loop:
+        seek_timestamp = self.seek_timestamp
+        if not self.loop and seek_timestamp == 0:
             popped = self.queue.pop(0)
             if self.queue_loop:
                 self.queue.append(popped)
+        self.seek_timestamp = 0
         if len(self.queue) == 0:
             await self.stop()
         else:
-            # self.voice_client.stop()
-            await self.play(self.queue[0].url)
+            await self.play(self.queue[0].url, send=not self.loop and seek_timestamp == 0, timestamp=seek_timestamp)
 
     async def skip(self):
         if self.loop:
             popped = self.queue.pop(0)
+        self.voice_client.stop()
+
+    async def seek(self, timestamp=0):
+        self.seek_timestamp = timestamp
         self.voice_client.stop()
 
     async def enqueue(self, ctx, query):
@@ -176,7 +179,14 @@ class VoiceState:
         for i in range(1, len(queue)):
             formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
         return formatted_string
-        
+    
+    async def send_now_playing(self, entry):
+        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
+        embed.set_thumbnail(url=entry.thumbnail)
+        embed.set_author(name="Now Playing")
+        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
+        await self.text_channel.send(embed=embed)
+
 class Music(commands.Cog):
     def __init__(self, bot):
         load_dotenv()
@@ -239,22 +249,6 @@ class Music(commands.Cog):
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue. !q"""
-        # def get_formatted_duration(time):
-        #     minutes = time//60
-        #     seconds = time%60
-        #     if seconds < 10:
-        #         seconds = f'0{seconds}'
-        #     formatted_string = f'{minutes}:{seconds}'
-        #     return formatted_string
-        # def get_formatted_song(song):
-        #     return f'[{song.title}]({song.url}) | `{get_formatted_duration(song.duration)} Requested by: {song.requester}`'
-        # def get_up_next(queue):
-        #     formatted_string = ''
-        #     if len(queue) <= 1:
-        #         formatted_string += 'Empty'
-        #     for i in range(1, len(queue)):
-        #         formatted_string += f'`{i}.` {get_formatted_song(queue[i])}\n\n'
-        #     return formatted_string
         voice_state = self.get_voice_state(ctx.guild.id)
         queue = voice_state.queue
         if len(queue) == 0:
@@ -304,7 +298,7 @@ class Music(commands.Cog):
                 await ctx.send(f'Wrong arguments')
                 raise exc
             removed_elem = voice_state.pop(args[0])
-            if not removed_elem: 
+            if removed_elem is None: 
                 await ctx.send(f'**Index not found**')
                 return
             voice_state.insert(args[1], removed_elem)
@@ -312,6 +306,22 @@ class Music(commands.Cog):
         except Exception as exc:
             await ctx.send(f'**Move Failed**')
             raise exc
+
+    @commands.command()
+    async def seek(self, ctx, *, args):
+        voice_state = self.get_voice_state(ctx.guild.id)
+        """Seek to a timestamp"""
+        try:
+            timestamp = args.split(':')
+            timestamp_in_seconds = int(timestamp[0])*60 + int(timestamp[1])
+            if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
+                await ctx.send(f"**Invalid time!**")
+                return
+            await voice_state.seek(timestamp_in_seconds)
+            await ctx.send(f"**Seeked to {args}**")
+        except Exception as exc:
+            await ctx.send(f'**Error!**')
+        voice_state = self.get_voice_state(ctx.guild.id)
 
     @commands.command()
     async def loop(self, ctx):
