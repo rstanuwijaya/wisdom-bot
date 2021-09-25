@@ -194,7 +194,7 @@ class Music(commands.Cog):
         """Add song into queue. !p [query: text/youtube_url]"""
         voice_state = self.get_voice_state(ctx.guild.id, ctx.message.channel)
         await ctx.send(f':mag_right: **Searching** `{query}`')
-        if not ctx.voice_client.is_playing() or voice_state is None:        
+        if not ctx.voice_client.is_playing() or voice_state.queue == []:        
             voice_state.queue = []
             entry = await voice_state.enqueue(ctx, query)
             await voice_state.start(ctx)
