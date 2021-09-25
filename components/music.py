@@ -1,5 +1,6 @@
 from sys import excepthook
-from time import time
+import time
+from discord import channel
 import youtube_dl
 import asyncio
 import discord
@@ -51,7 +52,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class VoiceEntry:
-    def __init__(self, query, id, title, url, requester=None, duration=None, thumbnail=None):
+    def __init__(self, query, id, title, url, channel=None, requester=None, duration=None, thumbnail=None):
         self.id = id
         self.title = title
         self.url = url
@@ -59,7 +60,9 @@ class VoiceEntry:
         self.duration = duration
         self.thumbnail = thumbnail
         self.query = query
+        self.channel = channel
         self.seek_timestamp = 0
+        self.last_play_time = time.time()
 
     def __str__(self):
         return self.title
@@ -78,7 +81,8 @@ class VoiceState:
     async def play(self, query, send=True, timestamp=0):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
         entry = self.queue[0]
-        if send: await self.send_now_playing(entry)
+        if send: await self.send_now_playing()
+        self.last_play_time = time.time()
         self.voice_client.play(self.player, after=self.after_finished)
 
     async def disconnect(self):
@@ -131,7 +135,8 @@ class VoiceState:
         video_thumbnail = data.get("thumbnail")
         video_url = data.get("webpage_url")
         video_duration = data.get("duration")
-        entry = VoiceEntry(query, video_id, video_title, video_url, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+        video_channel = data.get("channel")
+        entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
         self.queue.append(entry)
         return entry
 
@@ -169,6 +174,18 @@ class VoiceState:
         formatted_string = f'{minutes}:{seconds}'
         return formatted_string
     
+    @staticmethod
+    def get_animated_elapsed_time(time, duration):
+        percentage = time/duration
+        formatted_string = ''
+        length = 20
+        for i in range(length):
+            if i == int(percentage*length):
+                formatted_string += 'o'
+            else:
+                formatted_string += '='
+        return formatted_string
+
     def get_formatted_song(self, song):
         return f'[{song.title}]({song.url}) | `{self.get_formatted_duration(song.duration)} Requested by: {song.requester}`'
 
@@ -180,10 +197,15 @@ class VoiceState:
             formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
         return formatted_string
     
-    async def send_now_playing(self, entry):
+    async def send_now_playing(self, entry=None, elapsed_time=None):
+        if entry is None:
+            entry = self.queue[0]
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Now Playing")
+        if elapsed_time is not None:
+            embed.add_field(name="Time", value=self.get_animated_elapsed_time(elapsed_time, entry.duration), inline=False)
+        embed.add_field(name="Channel", value=(entry.channel), inline=True)
         embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
         await self.text_channel.send(embed=embed)
 
@@ -245,6 +267,14 @@ class Music(commands.Cog):
         voice_state = self.get_voice_state(ctx.guild.id)
         await voice_state.stop()
         await ctx.send("**Stopped!**")
+
+    @commands.command(aliases=['np'])
+    async def now_playing(self, ctx):
+        """Show now playing. !q"""
+        # await ctx.send("**JANCOK!**")
+        voice_state = self.get_voice_state(ctx.guild.id)
+        elapsed_time = (time.time() - voice_state.last_play_time)
+        await voice_state.send_now_playing(elapsed_time=elapsed_time)
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
