@@ -186,13 +186,14 @@ class VoiceState:
     @staticmethod
     def get_animated_elapsed_time(time, duration):
         percentage = time/duration
-        formatted_string = ''
-        length = 20
+        formatted_string = '```'
+        length = 25
         for i in range(length):
             if i == int(percentage*length):
-                formatted_string += 'o'
+                formatted_string += '<o>'
             else:
                 formatted_string += '='
+        formatted_string += '```'
         return formatted_string
 
     def get_formatted_song(self, song):
