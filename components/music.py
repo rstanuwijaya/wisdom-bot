@@ -1,3 +1,6 @@
+from sys import excepthook
+import time
+from discord import channel
 import youtube_dl
 import asyncio
 import discord
@@ -21,11 +24,6 @@ ytdl_format_options = {
     'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
 }
 
-ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
-}
-
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -38,7 +36,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
+    async def from_url(cls, url, *, loop=None, stream=False, timestamp=0):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
 
@@ -49,10 +47,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if timestamp is None:
             timestamp = 0
         filename = data['url'] if stream else ytdl.prepare_filename(data)
+        ffmpeg_options = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': f'-vn -ss {timestamp}'
+        }
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class VoiceEntry:
-    def __init__(self, query, id, title, url, requester=None, duration=None, thumbnail=None):
+    def __init__(self, query, id, title, url, channel=None, requester=None, duration=None, thumbnail=None):
         self.id = id
         self.title = title
         self.url = url
@@ -111,6 +113,7 @@ class VoiceState:
             popped = self.queue.pop(0)
             if self.queue_loop:
                 self.queue.append(popped)
+        self.seek_timestamp = 0
         if len(self.queue) == 0:
             await self.stop()
             return
@@ -146,7 +149,8 @@ class VoiceState:
         video_thumbnail = data.get("thumbnail")
         video_url = data.get("webpage_url")
         video_duration = data.get("duration")
-        entry = VoiceEntry(query, video_id, video_title, video_url, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+        video_channel = data.get("channel")
+        entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
         self.queue.append(entry)
         return entry
 
@@ -307,6 +311,14 @@ class Music(commands.Cog):
             await ctx.send("**Error!**")
             raise exc
 
+    @commands.command(aliases=['np'])
+    async def now_playing(self, ctx):
+        """Show now playing. !q"""
+        # await ctx.send("**JANCOK!**")
+        voice_state = self.get_voice_state(ctx.guild.id)
+        elapsed_time = (time.time() - voice_state.last_play_time)
+        await voice_state.send_now_playing(elapsed_time=elapsed_time)
+
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue. !q"""
@@ -367,7 +379,7 @@ class Music(commands.Cog):
                 await ctx.send(f'Wrong arguments')
                 raise exc
             removed_elem = voice_state.pop(args[0])
-            if not removed_elem: 
+            if removed_elem is None: 
                 await ctx.send(f'**Index not found**')
                 return
             voice_state.insert(args[1], removed_elem)
