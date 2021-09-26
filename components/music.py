@@ -385,6 +385,7 @@ class Music(commands.Cog):
         try:
             voice_state = self.get_voice_state(ctx.guild.id)
             timestamp = args.split(':')
+            if len(timestamp) == 1: timestamp = (timestamp[0], 0)
             timestamp_in_seconds = int(timestamp[0])*60 + int(timestamp[1])
             if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
                 await ctx.send(f"**Invalid time!**")
@@ -401,6 +402,7 @@ class Music(commands.Cog):
         try:
             voice_state = self.get_voice_state(ctx.guild.id)
             time = args.split(':')
+            if len(time) == 1: time = (time[0], 0)
             time_in_seconds = int(time[0])*60 + int(time[1])
             timestamp_in_seconds = voice_state.get_elapsed_time() + time_in_seconds
             if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
@@ -418,6 +420,7 @@ class Music(commands.Cog):
         try:
             voice_state = self.get_voice_state(ctx.guild.id)
             time = args.split(':')
+            if len(time) == 1: time = (time[0], 0)
             time_in_seconds = int(time[0])*60 + int(time[1])
             timestamp_in_seconds = voice_state.get_elapsed_time() - time_in_seconds
             if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
