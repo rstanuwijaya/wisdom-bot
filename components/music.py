@@ -311,14 +311,6 @@ class Music(commands.Cog):
             await ctx.send("**Error!**")
             raise exc
 
-    @commands.command(aliases=['np'])
-    async def now_playing(self, ctx):
-        """Show now playing. !q"""
-        # await ctx.send("**JANCOK!**")
-        voice_state = self.get_voice_state(ctx.guild.id)
-        elapsed_time = (time.time() - voice_state.last_play_time)
-        await voice_state.send_now_playing(elapsed_time=elapsed_time)
-
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
         """Show the current queue. !q"""
