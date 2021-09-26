@@ -276,12 +276,12 @@ class Music(commands.Cog):
             raise exc
 
     @commands.command(aliases=['v'])
-    async def volume(self, ctx, volume: int):
+    async def volume(self, ctx, volume=None):
         """Changes the player's volume. !v [volume]"""
         try:
             if volume is None:
                 volume = ctx.voice_client.source.volume
-                await ctx.send(f"**Volume**: `{volume}`%")
+                await ctx.send(f"**Volume**: `{int(volume*100)}`%")
             else:
                 ctx.voice_client.source.volume = volume / 100
                 await ctx.send(f"**Volume**: `{volume}`%")
@@ -397,7 +397,7 @@ class Music(commands.Cog):
             raise exc
 
     @commands.command(aliases=['ff'])
-    async def fast_forward(self, ctx, *, args):
+    async def fast_forward(self, ctx, *, args="1"):
         """Fast forward"""
         try:
             voice_state = self.get_voice_state(ctx.guild.id)
@@ -415,7 +415,7 @@ class Music(commands.Cog):
             raise exc
 
     @commands.command(aliases=['wb'])
-    async def wind_back(self, ctx, *, args):
+    async def wind_back(self, ctx, *, args="1"):
         """Wind back"""
         try:
             voice_state = self.get_voice_state(ctx.guild.id)
@@ -427,7 +427,7 @@ class Music(commands.Cog):
                 await ctx.send(f"**Invalid time!**")
                 return
             await voice_state.seek(timestamp_in_seconds)
-            await ctx.send(f"**Fast forwarded to {voice_state.get_formatted_duration(timestamp_in_seconds)}**")
+            await ctx.send(f"**Winded back to {voice_state.get_formatted_duration(timestamp_in_seconds)}**")
         except Exception as exc:
             await ctx.send(f'**Error!**')
             raise exc
