@@ -100,6 +100,7 @@ class VoiceState:
     async def stop(self):
         self.queue = []
         self.voice_client.stop()
+        del self
 
     async def start(self, ctx):
         self.voice_client = ctx.voice_client
@@ -112,6 +113,8 @@ class VoiceState:
             popped = self.queue.pop(0)
             if self.queue_loop:
                 self.queue.append(popped)
+        if seek_timestamp is None:
+            self.current().starting_time = None
         self.current().seek_timestamp = None
         if len(self.queue) == 0:
             await self.stop()
@@ -125,7 +128,6 @@ class VoiceState:
 
     async def seek(self, timestamp=0):
         self.current().seek_timestamp = timestamp
-        print(self.current().starting_time, time.time() - self.current().seek_timestamp, time.time(), self.current().seek_timestamp)
         self.current().starting_time = time.time() - self.current().seek_timestamp
         self.voice_client.stop()
 
@@ -205,13 +207,13 @@ class VoiceState:
             formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
         return formatted_string
     
-    async def send_now_playing(self, entry=None, elapsed_time=None):
-        if entry is None:
-            entry = self.queue[0]
+    async def send_now_playing(self):
+        entry = self.current()
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Now Playing")
-        if elapsed_time is not None:
+        if self.current().starting_time is not None:
+            elapsed_time = (time.time() - self.current().starting_time)
             embed.add_field(name="Time", value=self.get_animated_elapsed_time(elapsed_time, entry.duration), inline=False)
         embed.add_field(name="Channel", value=(entry.channel), inline=True)
         embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
@@ -280,9 +282,7 @@ class Music(commands.Cog):
     async def now_playing(self, ctx):
         """Show now playing. !q"""
         voice_state = self.get_voice_state(ctx.guild.id)
-        elapsed_time = (time.time() - voice_state.current().starting_time)
-        print("elapsed_time", elapsed_time)
-        await voice_state.send_now_playing(elapsed_time=elapsed_time)
+        await voice_state.send_now_playing()
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx):
