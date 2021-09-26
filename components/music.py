@@ -44,6 +44,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
             # take first item from a playlist
             data = data['entries'][0]
 
+        if timestamp is None:
+            timestamp = 0
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -61,8 +63,8 @@ class VoiceEntry:
         self.thumbnail = thumbnail
         self.query = query
         self.channel = channel
-        self.seek_timestamp = 0
-        self.last_play_time = time.time()
+        self.seek_timestamp = None
+        self.starting_time = None
 
     def __str__(self):
         return self.title
@@ -78,11 +80,15 @@ class VoiceState:
         self.loop = False
         self.queue_loop = False
 
+    def current(self):
+        return self.queue[0]
+
     async def play(self, query, send=True, timestamp=0):
         self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
         entry = self.queue[0]
         if send: await self.send_now_playing()
-        self.last_play_time = time.time()
+        if entry.starting_time is None:
+            entry.starting_time = time.time()
         self.voice_client.play(self.player, after=self.after_finished)
 
     async def disconnect(self):
@@ -101,16 +107,16 @@ class VoiceState:
 
     async def next(self):
         if len(self.queue) == 0: return
-        seek_timestamp = self.seek_timestamp
-        if not self.loop and seek_timestamp == 0:
+        seek_timestamp = self.current().seek_timestamp
+        if not self.loop and seek_timestamp is None:
             popped = self.queue.pop(0)
             if self.queue_loop:
                 self.queue.append(popped)
-        self.seek_timestamp = 0
+        self.current().seek_timestamp = None
         if len(self.queue) == 0:
             await self.stop()
         else:
-            await self.play(self.queue[0].url, send=not self.loop and seek_timestamp == 0, timestamp=seek_timestamp)
+            await self.play(self.queue[0].url, send=not self.loop and seek_timestamp is None, timestamp=seek_timestamp)
 
     async def skip(self):
         if self.loop:
@@ -118,7 +124,9 @@ class VoiceState:
         self.voice_client.stop()
 
     async def seek(self, timestamp=0):
-        self.seek_timestamp = timestamp
+        self.current().seek_timestamp = timestamp
+        print(self.current().starting_time, time.time() - self.current().seek_timestamp, time.time(), self.current().seek_timestamp)
+        self.current().starting_time = time.time() - self.current().seek_timestamp
         self.voice_client.stop()
 
     async def enqueue(self, ctx, query):
@@ -271,9 +279,9 @@ class Music(commands.Cog):
     @commands.command(aliases=['np'])
     async def now_playing(self, ctx):
         """Show now playing. !q"""
-        # await ctx.send("**JANCOK!**")
         voice_state = self.get_voice_state(ctx.guild.id)
-        elapsed_time = (time.time() - voice_state.last_play_time)
+        elapsed_time = (time.time() - voice_state.current().starting_time)
+        print("elapsed_time", elapsed_time)
         await voice_state.send_now_playing(elapsed_time=elapsed_time)
 
     @commands.command(aliases=['q'])
@@ -351,6 +359,7 @@ class Music(commands.Cog):
             await ctx.send(f"**Seeked to {args}**")
         except Exception as exc:
             await ctx.send(f'**Error!**')
+            raise exc
         voice_state = self.get_voice_state(ctx.guild.id)
 
     @commands.command()
