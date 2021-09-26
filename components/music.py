@@ -100,6 +100,7 @@ class VoiceState:
     async def stop(self):
         self.queue = []
         self.voice_client.stop()
+        await self.voice_client.disconnect()
         del self
 
     async def start(self, ctx):
@@ -112,6 +113,9 @@ class VoiceState:
             popped = self.queue.pop(0)
             if self.queue_loop:
                 self.queue.append(popped)
+        if len(self.queue) == 0:
+            await self.stop()
+            return
         if seek_timestamp is None:
             self.current().starting_time = None
         self.current().seek_timestamp = None
@@ -174,8 +178,15 @@ class VoiceState:
         except Exception as exc:
             raise exc
 
+    def get_elapsed_time(self):
+        elapsed_time = None
+        if self.current().starting_time is not None:
+            elapsed_time = (time.time() - self.current().starting_time)
+        return elapsed_time
+
     @staticmethod
     def get_formatted_duration(time):
+        time = int(time)
         minutes = time//60
         seconds = time%60
         if seconds < 10:
@@ -187,7 +198,7 @@ class VoiceState:
     def get_animated_elapsed_time(time, duration):
         percentage = time/duration
         formatted_string = '```'
-        length = 25
+        length = 30
         for i in range(length):
             if i == int(percentage*length):
                 formatted_string += '<o>'
@@ -212,9 +223,8 @@ class VoiceState:
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Now Playing")
-        if self.current().starting_time is not None:
-            elapsed_time = (time.time() - self.current().starting_time)
-            embed.add_field(name="Time", value=self.get_animated_elapsed_time(elapsed_time, entry.duration), inline=False)
+        if self.get_elapsed_time() is not None:
+            embed.add_field(name="Time", value=self.get_animated_elapsed_time(self.get_elapsed_time(), entry.duration), inline=False)
         embed.add_field(name="Channel", value=(entry.channel), inline=True)
         embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
         await self.text_channel.send(embed=embed)
@@ -371,9 +381,9 @@ class Music(commands.Cog):
 
     @commands.command()
     async def seek(self, ctx, *, args):
-        voice_state = self.get_voice_state(ctx.guild.id)
         """Seek to a timestamp"""
         try:
+            voice_state = self.get_voice_state(ctx.guild.id)
             timestamp = args.split(':')
             timestamp_in_seconds = int(timestamp[0])*60 + int(timestamp[1])
             if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
@@ -381,6 +391,40 @@ class Music(commands.Cog):
                 return
             await voice_state.seek(timestamp_in_seconds)
             await ctx.send(f"**Seeked to {args}**")
+        except Exception as exc:
+            await ctx.send(f'**Error!**')
+            raise exc
+
+    @commands.command(aliases=['ff'])
+    async def fast_forward(self, ctx, *, args):
+        """Fast forward"""
+        try:
+            voice_state = self.get_voice_state(ctx.guild.id)
+            time = args.split(':')
+            time_in_seconds = int(time[0])*60 + int(time[1])
+            timestamp_in_seconds = voice_state.get_elapsed_time() + time_in_seconds
+            if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
+                await ctx.send(f"**Invalid time!**")
+                return
+            await voice_state.seek(timestamp_in_seconds)
+            await ctx.send(f"**Fast forwarded to {voice_state.get_formatted_duration(timestamp_in_seconds)}**")
+        except Exception as exc:
+            await ctx.send(f'**Error!**')
+            raise exc
+
+    @commands.command(aliases=['wb'])
+    async def wind_back(self, ctx, *, args):
+        """Wind back"""
+        try:
+            voice_state = self.get_voice_state(ctx.guild.id)
+            time = args.split(':')
+            time_in_seconds = int(time[0])*60 + int(time[1])
+            timestamp_in_seconds = voice_state.get_elapsed_time() - time_in_seconds
+            if timestamp_in_seconds < 0 or timestamp_in_seconds > voice_state.queue[0].duration:
+                await ctx.send(f"**Invalid time!**")
+                return
+            await voice_state.seek(timestamp_in_seconds)
+            await ctx.send(f"**Fast forwarded to {voice_state.get_formatted_duration(timestamp_in_seconds)}**")
         except Exception as exc:
             await ctx.send(f'**Error!**')
             raise exc
