@@ -74,12 +74,13 @@ class VoiceState:
         self.bot = bot
         self.player = None
         self.text_channel: discord.TextChannel = text_channel
-        self.voice_client = None
+        self.voice_client: discord.VoiceClient = None
         self.queue: list[VoiceEntry] = []
         self.play_next_song = asyncio.Event()
         self.loop = False
         self.queue_loop = False
 
+    @property
     def current(self):
         return self.queue[0]
 
@@ -108,7 +109,7 @@ class VoiceState:
         await self.play(self.queue[0].url)
 
     async def next(self):
-        seek_timestamp = self.current().seek_timestamp
+        seek_timestamp = self.current.seek_timestamp
         if not self.loop and seek_timestamp is None:
             popped = self.queue.pop(0)
             if self.queue_loop:
@@ -118,8 +119,8 @@ class VoiceState:
             await self.stop()
             return
         if seek_timestamp is None:
-            self.current().starting_time = None
-        self.current().seek_timestamp = None
+            self.current.starting_time = None
+        self.current.seek_timestamp = None
         if len(self.queue) == 0:
             await self.stop()
         else:
@@ -131,8 +132,8 @@ class VoiceState:
         self.voice_client.stop()
 
     async def seek(self, timestamp=0):
-        self.current().seek_timestamp = timestamp
-        self.current().starting_time = time.time() - self.current().seek_timestamp
+        self.current.seek_timestamp = timestamp
+        self.current.starting_time = time.time() - self.current.seek_timestamp
         self.voice_client.stop()
 
     async def enqueue(self, ctx, query):
@@ -181,8 +182,8 @@ class VoiceState:
 
     def get_elapsed_time(self):
         elapsed_time = None
-        if self.current().starting_time is not None:
-            elapsed_time = (time.time() - self.current().starting_time)
+        if self.current.starting_time is not None:
+            elapsed_time = (time.time() - self.current.starting_time)
         return elapsed_time
 
     @staticmethod
@@ -198,14 +199,14 @@ class VoiceState:
     @staticmethod
     def get_animated_elapsed_time(time, duration):
         percentage = time/duration
-        formatted_string = '```'
+        formatted_string = '```|'
         length = 30
         for i in range(length):
             if i == int(percentage*length):
                 formatted_string += '<o>'
             else:
                 formatted_string += '='
-        formatted_string += '```'
+        formatted_string += '|```'
         return formatted_string
 
     def get_formatted_song(self, song):
@@ -220,7 +221,7 @@ class VoiceState:
         return formatted_string
     
     async def send_now_playing(self):
-        entry = self.current()
+        entry = self.current
         embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
         embed.set_thumbnail(url=entry.thumbnail)
         embed.set_author(name="Now Playing")
