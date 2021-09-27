@@ -1,6 +1,5 @@
 from sys import excepthook
 import time
-from discord import channel
 import youtube_dl
 import asyncio
 import discord
@@ -25,6 +24,22 @@ ytdl_format_options = {
 }
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+class Timer:
+    def __init__(self, timeout, callback):
+        self._timeout = timeout
+        self._callback = callback
+        self._task = None
+
+    def start(self):
+        self._task = asyncio.ensure_future(self._job())
+
+    async def _job(self):
+        await asyncio.sleep(self._timeout)
+        await self._callback()
+
+    def cancel(self):
+        if self._task is None: return
+        self._task.cancel()
 
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
@@ -71,20 +86,21 @@ class VoiceEntry:
 
 class VoiceState:
     def __init__(self, bot, text_channel=None):
-        self.bot = bot
-        self.player = None
+        self.bot: commands.bot = bot
+        self.player: YTDLSource = None
         self.text_channel: discord.TextChannel = text_channel
         self.voice_client: discord.VoiceClient = None
         self.queue: list[VoiceEntry] = []
-        self.play_next_song = asyncio.Event()
-        self.loop = False
-        self.queue_loop = False
+        self.loop: bool = False
+        self.queue_loop: bool = False
+        self.timer: Timer = Timer(15, self.disconnect)
 
     @property
     def current(self):
         return self.queue[0]
 
     async def play(self, query, send=True, timestamp=0):
+        self.timer.cancel()
         self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
         entry = self.queue[0]
         if send: await self.send_now_playing()
@@ -94,6 +110,7 @@ class VoiceState:
 
     async def disconnect(self):
         await self.voice_client.disconnect()
+        del self
 
     async def clear(self):
         self.queue = [self.queue[0], ]
@@ -101,8 +118,6 @@ class VoiceState:
     async def stop(self):
         self.queue = []
         self.voice_client.stop()
-        await self.voice_client.disconnect()
-        del self
 
     async def start(self, ctx):
         self.voice_client = ctx.voice_client
@@ -116,7 +131,7 @@ class VoiceState:
                 self.queue.append(popped)
         self.seek_timestamp = 0
         if len(self.queue) == 0:
-            await self.stop()
+            self.timer.start()
             return
         if seek_timestamp is None:
             self.current.starting_time = None
