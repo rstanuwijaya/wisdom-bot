@@ -31,7 +31,7 @@ class Timer:
         self._task = None
 
     def start(self):
-        self._task = asyncio.ensure_future(self._job())
+        self._task = asyncio.create_task(self._job())
 
     async def _job(self):
         await asyncio.sleep(self._timeout)
@@ -99,6 +99,10 @@ class VoiceState:
     def current(self):
         return self.queue[0]
 
+    @property
+    def queue_length(self):
+        return len(self.queue)
+
     async def play(self, query, send=True, timestamp=0):
         self.timer.cancel()
         self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
@@ -108,20 +112,12 @@ class VoiceState:
             entry.starting_time = time.time()
         self.voice_client.play(self.player, after=self.after_finished)
 
-    async def disconnect(self):
-        await self.voice_client.disconnect()
-        del self
-
-    async def clear(self):
-        self.queue = [self.queue[0], ]
-
-    async def stop(self):
-        self.queue = []
-        self.voice_client.stop()
-
-    async def start(self, ctx):
-        self.voice_client = ctx.voice_client
-        await self.play(self.queue[0].url)
+    def after_finished(self, exc=None):
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
+            fut.result()
+        except Exception as exc:
+            raise exc
 
     async def next(self):
         seek_timestamp = self.current.seek_timestamp
@@ -140,6 +136,21 @@ class VoiceState:
             await self.stop()
         else:
             await self.play(self.queue[0].url, send=not self.loop and seek_timestamp is None, timestamp=seek_timestamp)
+
+    async def disconnect(self):
+        await self.voice_client.disconnect()
+        del self
+
+    async def clear(self):
+        self.queue = [self.queue[0], ]
+
+    async def stop(self):
+        self.queue = []
+        self.voice_client.stop()
+
+    async def start(self, ctx):
+        self.voice_client = ctx.voice_client
+        await self.play(self.queue[0].url)
 
     async def skip(self):
         if self.loop:
@@ -183,17 +194,6 @@ class VoiceState:
         """insert after the specified index"""
         self.queue.insert(index, entry)
         return True
-
-    def length(self):
-        """return the length of the queue"""
-        return len(self.queue)
-
-    def after_finished(self, exc=None):
-        try:
-            fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
-            fut.result()
-        except Exception as exc:
-            raise exc
 
     def get_elapsed_time(self):
         elapsed_time = None
@@ -274,8 +274,8 @@ class Music(commands.Cog):
             embed.set_thumbnail(url=entry.thumbnail)
             embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
             embed.add_field(name="Song Duration", value=voice_state.get_formatted_duration(entry.duration), inline=True)
-            embed.add_field(name="Position", value=voice_state.length()-1 if voice_state.length()-1 > 0 else "Now Playing!", inline=True)
-            if voice_state.length() > 1:
+            embed.add_field(name="Position", value=voice_state.queue_length-1 if voice_state.queue_length-1 > 0 else "Now Playing!", inline=True)
+            if voice_state.queue_length > 1:
                 await ctx.send(embed=embed)
         except Exception as exc:
             await ctx.send("**Error!**")
