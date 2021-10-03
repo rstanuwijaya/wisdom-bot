@@ -1,4 +1,3 @@
-from sys import excepthook
 import time
 import youtube_dl
 import asyncio
@@ -31,7 +30,7 @@ class Timer:
         self._task = None
 
     def start(self):
-        self._task = asyncio.ensure_future(self._job())
+        self._task = asyncio.create_task(self._job())
 
     async def _job(self):
         await asyncio.sleep(self._timeout)
@@ -99,6 +98,10 @@ class VoiceState:
     def current(self):
         return self.queue[0]
 
+    @property
+    def queue_length(self):
+        return len(self.queue)
+
     async def play(self, query, send=True, timestamp=0):
         self.timer.cancel()
         self.player = await YTDLSource.from_url(query, loop=False, stream=True, timestamp=timestamp)
@@ -108,20 +111,12 @@ class VoiceState:
             entry.starting_time = time.time()
         self.voice_client.play(self.player, after=self.after_finished)
 
-    async def disconnect(self):
-        await self.voice_client.disconnect()
-        del self
-
-    async def clear(self):
-        self.queue = [self.queue[0], ]
-
-    async def stop(self):
-        self.queue = []
-        self.voice_client.stop()
-
-    async def start(self, ctx):
-        self.voice_client = ctx.voice_client
-        await self.play(self.queue[0].url)
+    def after_finished(self, exc=None):
+        try:
+            fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
+            fut.result()
+        except Exception as exc:
+            raise exc
 
     async def next(self):
         seek_timestamp = self.current.seek_timestamp
@@ -141,6 +136,21 @@ class VoiceState:
         else:
             await self.play(self.queue[0].url, send=not self.loop and seek_timestamp is None, timestamp=seek_timestamp)
 
+    async def disconnect(self):
+        await self.voice_client.disconnect()
+        del self
+
+    async def clear(self):
+        self.queue = [self.queue[0], ]
+
+    async def stop(self):
+        self.queue = []
+        self.voice_client.stop()
+
+    async def start(self, ctx):
+        self.voice_client = ctx.voice_client
+        await self.play(self.queue[0].url)
+
     async def skip(self):
         if self.loop:
             popped = self.queue.pop(0)
@@ -153,21 +163,106 @@ class VoiceState:
 
     async def enqueue(self, ctx, query):
         requester = ctx.message.author.display_name
-        if query.startswith("https://youtu.be/"):
-            data = ytdl.extract_info(f'{query}', download=False)
+        data = ytdl.extract_info(f'{query}', download=False)
+        extractor_key = data.get("extractor_key")
+        if extractor_key == "YoutubeSearch":
+            await self.enqueue_handle_search(ctx, query, data)
+        elif extractor_key == "Youtube":
+            await self.enqueue_handle_url(ctx, query, data)
+        elif extractor_key == "YoutubeTab":
+            await self.enqueue_handle_playlist(ctx, query, data)
         else:
-            data = ytdl.extract_info(f'ytsearch:{query}', download=False)
-        if 'entries' in data:
-            # take first item from a playlist
-            data = data['entries'][0]
-        video_id = data.get("id")
-        video_title = data.get("title")
-        video_thumbnail = data.get("thumbnail")
-        video_url = data.get("webpage_url")
-        video_duration = data.get("duration")
-        video_channel = data.get("channel")
+            await self.enqueue_handle_general(ctx, query, data)
+
+    async def enqueue_handle_search(self, ctx, query, data):
+        entry = data['entries'][0]
+        requester = ctx.message.author.display_name
+        video_id = entry.get("id")
+        video_title = entry.get("title")
+        video_thumbnail = entry.get("thumbnail")
+        video_url = entry.get("webpage_url")
+        video_duration = entry.get("duration")
+        video_channel = entry.get("channel")
         entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
         self.queue.append(entry)
+        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
+        embed.set_thumbnail(url=entry.thumbnail)
+        embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
+        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
+        embed.add_field(name="Position", value=self.queue_length-1 if self.queue_length-1 > 0 else "Now Playing!", inline=True)
+        if self.queue_length > 1:
+            await self.text_channel.send(embed=embed)
+        return entry
+
+    async def enqueue_handle_url(self, ctx, query, data):
+        entry = data
+        requester = ctx.message.author.display_name
+        video_id = entry.get("id")
+        video_title = entry.get("title")
+        video_thumbnail = entry.get("thumbnail")
+        video_url = entry.get("webpage_url")
+        video_duration = entry.get("duration")
+        video_channel = entry.get("channel")
+        entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+        self.queue.append(entry)
+        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
+        embed.set_thumbnail(url=entry.thumbnail)
+        embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
+        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
+        embed.add_field(name="Position", value=self.queue_length-1 if self.queue_length-1 > 0 else "Now Playing!", inline=True)
+        if self.queue_length > 1:
+            await self.text_channel.send(embed=embed)
+        return entry
+
+    async def enqueue_handle_playlist(self, ctx, query, data):
+        requester = ctx.message.author.display_name
+        desc = ""
+        total_duration = 0
+        print(data.keys())
+        playlist_title = data.get("title")
+        playlist_url = data.get("webpage_url")
+        for i, entry in enumerate(data['entries']):
+            video_id = entry.get("id")
+            video_title = entry.get("title")
+            video_thumbnail = entry.get("thumbnail")
+            video_url = entry.get("webpage_url")
+            video_duration = entry.get("duration")
+            video_channel = entry.get("channel")
+            total_duration += video_duration
+            entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+            desc += f"`{i+1}.` {self.get_formatted_song(entry)}\n\n"
+            self.queue.append(entry)
+        embed=discord.Embed(title=playlist_title, description=desc, url=playlist_url, color=0xFFC0CB)
+        embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
+        embed.add_field(name="Total Duration", value=self.get_formatted_duration(total_duration), inline=True)
+        embed.add_field(name="Total Items", value=len(data['entries']), inline=True)
+        embed.add_field(name="Queue length", value=self.queue_length-1, inline=True)
+        if self.queue_length > 1:
+            await self.text_channel.send(embed=embed)
+        return entry
+
+    async def enqueue_handle_general(self, ctx, query, data):
+        requester = ctx.message.author.display_name
+        await self.text_channel.send("**Invalid input, trying my best!**")
+        if 'entries' in data:
+            entry = data['entries'][0]
+        else:
+            entry = data
+        video_id = entry.get("id")
+        video_title = entry.get("title")
+        video_thumbnail = entry.get("thumbnail")
+        video_url = entry.get("webpage_url")
+        video_duration = entry.get("duration")
+        video_channel = entry.get("channel")
+        entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
+        self.queue.append(entry)
+        embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
+        embed.set_thumbnail(url=entry.thumbnail)
+        embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
+        embed.add_field(name="Song Duration", value=self.get_formatted_duration(entry.duration), inline=True)
+        embed.add_field(name="Position", value=self.queue_length-1 if self.queue_length-1 > 0 else "Now Playing!", inline=True)
+        if self.queue_length > 1:
+            await self.text_channel.send(embed=embed)
         return entry
 
     def pop(self, index):
@@ -183,17 +278,6 @@ class VoiceState:
         """insert after the specified index"""
         self.queue.insert(index, entry)
         return True
-
-    def length(self):
-        """return the length of the queue"""
-        return len(self.queue)
-
-    def after_finished(self, exc=None):
-        try:
-            fut = asyncio.run_coroutine_threadsafe(self.next(), self.bot.loop)
-            fut.result()
-        except Exception as exc:
-            raise exc
 
     def get_elapsed_time(self):
         elapsed_time = None
@@ -270,13 +354,6 @@ class Music(commands.Cog):
                 await voice_state.start(ctx)
             else:
                 entry = await voice_state.enqueue(ctx, query)
-            embed=discord.Embed(title=entry.title, url=entry.url, color=0xFFC0CB)
-            embed.set_thumbnail(url=entry.thumbnail)
-            embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
-            embed.add_field(name="Song Duration", value=voice_state.get_formatted_duration(entry.duration), inline=True)
-            embed.add_field(name="Position", value=voice_state.length()-1 if voice_state.length()-1 > 0 else "Now Playing!", inline=True)
-            if voice_state.length() > 1:
-                await ctx.send(embed=embed)
         except Exception as exc:
             await ctx.send("**Error!**")
             raise exc
