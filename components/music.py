@@ -218,7 +218,6 @@ class VoiceState:
         requester = ctx.message.author.display_name
         desc = ""
         total_duration = 0
-        print(data.keys())
         playlist_title = data.get("title")
         playlist_url = data.get("webpage_url")
         for i, entry in enumerate(data['entries']):
@@ -232,6 +231,7 @@ class VoiceState:
             entry = VoiceEntry(query, video_id, video_title, video_url, channel=video_channel, requester=requester, duration=video_duration, thumbnail=video_thumbnail)
             desc += f"`{i+1}.` {self.get_formatted_song(entry)}\n\n"
             self.queue.append(entry)
+        desc = desc[:4000]
         embed=discord.Embed(title=playlist_title, description=desc, url=playlist_url, color=0xFFC0CB)
         embed.set_author(name="Added to queue", icon_url=ctx.author.avatar_url)
         embed.add_field(name="Total Duration", value=self.get_formatted_duration(total_duration), inline=True)
@@ -317,6 +317,7 @@ class VoiceState:
             formatted_string += 'Empty'
         for i in range(1, len(queue)):
             formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
+        formatted_string = formatted_string[:4000]
         return formatted_string
     
     async def send_now_playing(self):
