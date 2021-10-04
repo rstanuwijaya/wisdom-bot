@@ -317,7 +317,7 @@ class VoiceState:
             formatted_string += 'Empty'
         for i in range(1, len(queue)):
             formatted_string += f'`{i}.` {self.get_formatted_song(queue[i])}\n\n'
-        formatted_string = formatted_string[:4000]
+        formatted_string = formatted_string[:1000]
         return formatted_string
     
     async def send_now_playing(self):
