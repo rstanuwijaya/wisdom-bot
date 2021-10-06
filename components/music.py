@@ -85,6 +85,7 @@ class VoiceEntry:
 
 class VoiceState:
     def __init__(self, bot, text_channel=None):
+        self.is_alive = True
         self.bot: commands.bot = bot
         self.player: YTDLSource = None
         self.text_channel: discord.TextChannel = text_channel
@@ -138,7 +139,7 @@ class VoiceState:
 
     async def disconnect(self):
         await self.voice_client.disconnect()
-        del self
+        self.is_alive = False
 
     async def clear(self):
         self.queue = [self.queue[0], ]
@@ -341,13 +342,15 @@ class Music(commands.Cog):
     def get_voice_state(self, guild_id, text_channel=None):
         if guild_id not in self.voice_states:
             self.voice_states[guild_id] = VoiceState(self.bot, text_channel=text_channel)
+        if not self.voice_states[guild_id].is_alive:
+            self.voice_states[guild_id] = VoiceState(self.bot, text_channel=text_channel)
         return self.voice_states[guild_id]
 
     @commands.command(aliases=['p'])
     async def play(self, ctx: commands.Context, *, query):
         """Add song into queue. !p [query: text/youtube_url]"""
         try:
-            voice_state = self.get_voice_state(ctx.guild.id, ctx.message.channel)
+            voice_state = self.get_voice_state(ctx.guild.id, text_channel=ctx.message.channel)
             await ctx.send(f':mag_right: **Searching** `{query}`')
             if not ctx.voice_client.is_playing() or voice_state.queue == []:        
                 voice_state.queue = []
